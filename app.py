@@ -6,15 +6,30 @@ from geopy.distance import geodesic
 import math
 import os
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
 import re
 from fpdf import FPDF
 import tempfile
 
 # ==========================================
-# CONFIGURAÇÃO DA INTERFACE (STREAMLIT)
+# CONFIGURAÇÃO DA INTERFACE E FATORES ESG
 # ==========================================
-st.set_page_config(page_title="Simulador InPlanet", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="Simulador InPlanet ESG", page_icon="🌿", layout="wide")
+
+# Fatores de Emissão Oficiais (kgCO2eq por L ou m³)
+FATORES_EMISSAO = {
+    'Diesel B15': 2.70831,
+    'Biometano': 0.30620,
+    'GNV': 2.83115
+}
+
+# Consumo Médio Homologado (km por L ou m³)
+CONSUMO_MEDIO = {
+    'Diesel B15': 2.02,
+    'Biometano': 1.90,
+    'GNV': 1.90
+}
 
 # ==========================================
 # FUNÇÕES GERAIS (LEITOR DE LINKS E PDF)
@@ -41,7 +56,6 @@ def gerar_pdf(pedreira_nome, area, dose, toneladas, cap_caminhao, viagens, dist_
     pdf = FPDF()
     pdf.add_page()
     
-    # 1. ADICIONANDO A LOGO (Se existir)
     if os.path.exists("logo.png"):
         pdf.image("logo.png", x=80, y=10, w=50)
         pdf.ln(25)
@@ -93,7 +107,6 @@ def gerar_pdf(pedreira_nome, area, dose, toneladas, cap_caminhao, viagens, dist_
     pdf.cell(200, 8, txt=f"CUSTO FINAL DO PRODUTOR: R$ {custo_final:,.2f}", ln=True)
     pdf.cell(200, 8, txt=f"CUSTO DILUIDO POR HECTARE: R$ {frete_ha:,.2f} / ha", ln=True)
     
-    # 2. ADICIONANDO O GRÁFICO DE ROSCA
     try:
         df_graf = pd.DataFrame({
             'Categoria': ['Remineralizador (InPlanet)', 'Subsidio Frete (InPlanet)', 'Frete (Produtor)'],
@@ -106,14 +119,13 @@ def gerar_pdf(pedreira_nome, area, dose, toneladas, cap_caminhao, viagens, dist_
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
             fig_pdf.write_image(tmp_img.name, engine="kaleido")
             pdf.image(tmp_img.name, x=25, w=160)
-    except Exception as e:
+    except:
         pass 
 
     pdf.ln(5)
     pdf.set_font("Arial", 'I', 8)
     pdf.set_text_color(150, 150, 150)
     pdf.cell(200, 4, txt="Documento gerado automaticamente pelo Simulador Comercial InPlanet.", ln=True, align='C')
-    pdf.cell(200, 4, txt="Valores de frete sao estimativas sujeitas a variacao de mercado e pedagios.", ln=True, align='C')
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
@@ -122,7 +134,7 @@ def gerar_pdf(pedreira_nome, area, dose, toneladas, cap_caminhao, viagens, dist_
     return pdf_bytes
 
 # ==========================================
-# 1. BASE DE DADOS DAS PEDREIRAS
+# 1. BASE DE DADOS COMPLETA (PEDREIRAS E ANTT)
 # ==========================================
 dados_pedreiras = pd.DataFrame({
     'Mine Name': [
@@ -188,230 +200,236 @@ def auto_selecionar_pedreira(lat, lon):
     idx_mais_proxima = distancias.idxmin()
     st.session_state.pedreira_key = dados_pedreiras.loc[idx_mais_proxima, 'Exibicao']
 
-st.title("🌿 Simulador Comercial: Logística InPlanet")
+# ==========================================
+# INTERFACE E ENTRADAS PRINCIPAIS
+# ==========================================
+st.title("🌿 Simulador Comercial InPlanet: Logística & Ativos ESG")
 
-# Barra Lateral
+# Barra Lateral ESG Global
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
-else:
-    st.sidebar.markdown("### [Espaço para Logo InPlanet]")
 
 st.sidebar.markdown("---")
-st.sidebar.header("Parâmetros do Frete")
-tipo_frete = st.sidebar.radio("Responsabilidade do Transporte:", ("Frete Terceirizado (ANTT)", "Frota Própria (Fazendeiro)"))
-st.sidebar.markdown("---")
+st.sidebar.header("Variáveis Mercado Carbono")
+preco_credito_usd = st.sidebar.number_input("Preço do Crédito de Carbono ($/tCDR)", value=300.0)
+cotacao_dolar = st.sidebar.number_input("Cotação do Dólar (R$)", value=5.00, step=0.10)
+valor_credito_brl = preco_credito_usd * cotacao_dolar
+st.sidebar.info(f"**Retorno Carbono:** R$ {valor_credito_brl:,.2f} / tCO2 evitada")
 
-# NOVOS CAMPOS PARA FROTA PRÓPRIA
-if tipo_frete == "Frete Terceirizado (ANTT)":
-    modelo_caminhao = st.sidebar.selectbox("Modelo do Caminhão (ANTT)", dados_antt['Modelo'])
-else:
-    preco_diesel = st.sidebar.number_input("Preço do Diesel na Região (R$/L)", value=6.00, step=0.10)
-    capacidade_propria = st.sidebar.number_input("Capacidade do Caminhão (toneladas)", value=35)
-    consumo_proprio = st.sidebar.number_input("Consumo do Caminhão (km/L)", value=2.5, step=0.1)
-    
-    st.sidebar.markdown("##### ⚙️ Custos Operacionais")
-    custo_manutencao_km = st.sidebar.number_input("Pneus e Manutenção (R$/km)", value=2.00, step=0.10, help="Média BR: R$ 1,50 a R$ 2,50/km.")
-    custo_motorista_viagem = st.sidebar.number_input("Diária do Motorista (R$/Viagem)", value=200.00, step=10.0)
-    custo_pedagio_viagem = st.sidebar.number_input("Pedágio (R$/Viagem)", value=0.00, step=10.0)
+st.markdown("### 📍 Configuração do Destino (Fazenda)")
+col_origem, col_destino = st.columns(2)
 
-st.sidebar.markdown("---")
-st.sidebar.header("Negociação")
-subsidio_frete = st.sidebar.number_input("Subsídio da InPlanet no Frete (R$/ton)", value=0.0, step=5.0)
-
-# Seletores Principais
-st.markdown("### 📍 Origem e Destino")
-col1, col2 = st.columns(2)
-
-with col1:
+with col_origem:
     pedreira_selecionada = st.selectbox("Selecione a Pedreira (Origem)", dados_pedreiras['Exibicao'], key='pedreira_key')
     pedreira = dados_pedreiras[dados_pedreiras['Exibicao'] == pedreira_selecionada].iloc[0]
     st.info(f"**Preço do Remineralizador:** R$ {pedreira['Price/ton']:,.2f} / tonelada")
 
-with col2:
-    tipo_destino = st.radio("Como deseja calcular a distância?", ("Colar Link do Google Maps / Coordenadas", "Digitar Quilometragem (Manual)"))
-    
+with col_destino:
+    input_local = st.text_input("Cole aqui o Link do Google Maps ou as Coordenadas:")
     fazenda_lat, fazenda_lon = -15.7942, -49.2536 
     distancia_ida_km = 150.0
     
-    if tipo_destino == "Colar Link do Google Maps / Coordenadas":
-        input_local = st.text_input("Cole aqui o Link do Google Maps ou as Coordenadas:")
-        
-        if input_local:
-            lat_extraida, lon_extraida = extrair_coordenadas(input_local)
+    if input_local:
+        lat_extraida, lon_extraida = extrair_coordenadas(input_local)
+        if lat_extraida and lon_extraida:
+            fazenda_lat, fazenda_lon = lat_extraida, lon_extraida
+            st.success(f"📍 Fazenda Localizada!")
+            st.button("🪄 Auto-Selecionar Pedreira Mais Próxima", on_click=auto_selecionar_pedreira, args=(fazenda_lat, fazenda_lon))
             
-            if lat_extraida and lon_extraida:
-                fazenda_lat, fazenda_lon = lat_extraida, lon_extraida
-                st.success(f"📍 Destino encontrado! (Lat: {fazenda_lat}, Lon: {fazenda_lon})")
-                
-                st.button("🪄 Auto-Selecionar Pedreira Mais Próxima", on_click=auto_selecionar_pedreira, args=(fazenda_lat, fazenda_lon))
-                
-                coord_origem = (pedreira['Lat'], pedreira['Long'])
-                coord_destino = (fazenda_lat, fazenda_lon)
-                
-                distancia_ida_km = geodesic(coord_origem, coord_destino).km * 1.2
-                st.success(f"✅ Distância estimada (Linha Reta + 20% margem): **{distancia_ida_km:,.1f} km**.")
-
-            else:
-                st.error("❌ Não consegui encontrar as coordenadas neste texto. Cole um link válido do Google Maps.")
-    else:
-        distancia_ida_km = st.number_input("Distância de Ida (km)", value=150.0, step=10.0, min_value=1.0)
+            coord_origem = (pedreira['Lat'], pedreira['Long'])
+            coord_destino = (fazenda_lat, fazenda_lon)
+            distancia_ida_km = geodesic(coord_origem, coord_destino).km * 1.2
+            st.success(f"✅ Distância Estimada (Rota + 20%): **{distancia_ida_km:,.1f} km**")
 
 st.markdown("### 🚜 Volume da Operação Agronômica")
 col_area, col_dose = st.columns(2)
-area_ha = col_area.number_input("Área de Aplicação na Fazenda (Hectares)", value=100.0, step=50.0, min_value=1.0)
-dose_t_ha = col_dose.slider("Dosagem Recomendada (toneladas/hectare)", min_value=1.0, max_value=50.0, value=20.0, step=1.0)
-
+area_ha = col_area.number_input("Área de Aplicação na Fazenda (Hectares)", value=500.0, step=50.0, min_value=1.0)
+dose_t_ha = col_dose.number_input("Dosagem Recomendada (toneladas/hectare)", value=20.0, step=1.0)
 toneladas_totais = area_ha * dose_t_ha
 st.success(f"**Carga Total Necessária:** {toneladas_totais:,.0f} toneladas de remineralizador.")
 
-# ==========================================
-# 3. LÓGICA DE CÁLCULO
-# ==========================================
 distancia_viagem_completa_km = distancia_ida_km * 2
-custo_total_po = toneladas_totais * pedreira['Price/ton']
-custo_subsidio_total = subsidio_frete * toneladas_totais
-custo_inplanet_total = custo_total_po + custo_subsidio_total
 
-if tipo_frete == "Frete Terceirizado (ANTT)":
-    caminhao_selecionado = dados_antt[dados_antt['Modelo'] == modelo_caminhao].iloc[0]
-    capacidade_caminhao = caminhao_selecionado['Capacidade_t']
-    consumo_km_l = caminhao_selecionado['Consumo_km_l']
+# ==========================================
+# DEFINIÇÃO DAS ABAS (MÓDULOS)
+# ==========================================
+aba_tradicional, aba_esg = st.tabs(["🚚 1. Logística Tradicional", "🌿 2. Módulo Avançado ESG (Biometano)"])
+
+# ------------------------------------------
+# ABA 1: LOGÍSTICA TRADICIONAL
+# ------------------------------------------
+with aba_tradicional:
+    st.subheader("Simulação de Frete Comum (Diesel)")
+    col_t1, col_t2 = st.columns([1, 2])
     
-    if distancia_ida_km <= 50:
-        tarifa_ton_km = caminhao_selecionado['Ate_50km']
-    elif distancia_ida_km <= 100:
-        tarifa_ton_km = caminhao_selecionado['Ate_100km']
-    else:
-        tarifa_ton_km = caminhao_selecionado['Acima_100km']
+    with col_t1:
+        tipo_frete = st.radio("Responsabilidade do Transporte:", ("Frete Terceirizado (ANTT)", "Frota Própria (Fazendeiro)"), key="tipo_frete_aba1")
+        subsidio_frete = st.number_input("Subsídio InPlanet no Frete (R$/ton)", value=0.0, step=5.0, key="subsidio_aba1")
         
-    custo_total_frete = toneladas_totais * distancia_viagem_completa_km * tarifa_ton_km
-    custo_combustivel = 0
-    custo_manut_total = 0
-    custo_motor_total = 0
-    custo_pedagio_total = 0
-else: 
-    capacidade_caminhao = capacidade_propria
-    consumo_km_l = consumo_proprio
-    tarifa_ton_km = 0 
-    
+        if tipo_frete == "Frete Terceirizado (ANTT)":
+            modelo_caminhao = st.selectbox("Modelo do Caminhão (ANTT)", dados_antt['Modelo'])
+            caminhao_selecionado = dados_antt[dados_antt['Modelo'] == modelo_caminhao].iloc[0]
+            capacidade_caminhao = caminhao_selecionado['Capacidade_t']
+            consumo_km_l = caminhao_selecionado['Consumo_km_l']
+            tarifa_ton_km = caminhao_selecionado['Ate_50km'] if distancia_ida_km <= 50 else (caminhao_selecionado['Ate_100km'] if distancia_ida_km <= 100 else caminhao_selecionado['Acima_100km'])
+            custo_total_frete = toneladas_totais * distancia_viagem_completa_km * tarifa_ton_km
+        else:
+            preco_diesel = st.number_input("Preço do Diesel (R$/L)", value=6.00)
+            capacidade_caminhao = st.number_input("Capacidade do Caminhão (t)", value=35)
+            consumo_km_l = st.number_input("Consumo (km/L)", value=2.5)
+            custo_manutencao_km = st.number_input("Manutenção/Pneus (R$/km)", value=2.00)
+            custo_motorista_viagem = st.number_input("Diária Motorista (R$/Viagem)", value=200.00)
+            custo_pedagio_viagem = st.number_input("Pedágio (R$/Viagem)", value=0.00)
+            
+            viagens_est = math.ceil(toneladas_totais / capacidade_caminhao)
+            km_est = viagens_est * distancia_viagem_completa_km
+            custo_total_frete = (km_est / consumo_km_l * preco_diesel) + (km_est * custo_manutencao_km) + (viagens_est * (custo_motorista_viagem + custo_pedagio_viagem))
+
     viagens_necessarias = math.ceil(toneladas_totais / capacidade_caminhao)
-    distancia_total_percorrida = viagens_necessarias * distancia_viagem_completa_km 
-    litros_consumidos = distancia_total_percorrida / consumo_km_l
-    
-    custo_combustivel = litros_consumidos * preco_diesel
-    custo_manut_total = distancia_total_percorrida * custo_manutencao_km
-    custo_motor_total = viagens_necessarias * custo_motorista_viagem
-    custo_pedagio_total = viagens_necessarias * custo_pedagio_viagem
-    
-    custo_total_frete = custo_combustivel + custo_manut_total + custo_motor_total + custo_pedagio_total
+    distancia_total_frotas = viagens_necessarias * distancia_viagem_completa_km 
+    total_litros_diesel = distancia_total_frotas / consumo_km_l
+    custo_total_po = toneladas_totais * pedreira['Price/ton']
+    custo_subsidio_total = subsidio_frete * toneladas_totais
+    custo_final_fazendeiro_total = max(0, custo_total_frete - custo_subsidio_total)
+    custo_frete_ha = custo_final_fazendeiro_total / area_ha
+    frete_por_tonelada = custo_total_frete / toneladas_totais if toneladas_totais > 0 else 0
 
-viagens_necessarias = math.ceil(toneladas_totais / capacidade_caminhao)
-distancia_total_frotas = viagens_necessarias * distancia_viagem_completa_km 
-total_litros_diesel = distancia_total_frotas / consumo_km_l
-custo_final_fazendeiro_total = max(0, custo_total_frete - custo_subsidio_total)
-custo_frete_ha = custo_final_fazendeiro_total / area_ha
-frete_por_tonelada = custo_total_frete / toneladas_totais if toneladas_totais > 0 else 0
-
-# ==========================================
-# 4. EXIBIÇÃO DE RESULTADOS & GRÁFICOS
-# ==========================================
-st.markdown("---")
-st.subheader("📊 Resumo da Frota e Custos")
-
-metric1, metric2, metric3, metric4, metric5 = st.columns(5)
-metric1.metric("Viagens Necessárias", f"{viagens_necessarias} viagens", f"Caminhão de {capacidade_caminhao}t")
-metric2.metric("Distância (Ida + Volta)", f"{distancia_viagem_completa_km:,.0f} km")
-metric3.metric("Km Total Rodado", f"{distancia_total_frotas:,.0f} km")
-metric4.metric("Consumo Est. Diesel", f"{total_litros_diesel:,.0f} L")
-metric5.metric("Frete Cheio (por Ton)", f"R$ {frete_por_tonelada:,.2f}")
-
-st.markdown("---")
-col_metricas, col_grafico = st.columns([1.2, 1])
-
-with col_metricas:
-    st.markdown("##### 🤝 Resumo Financeiro da Parceria")
-    st.info(f"**🟢 Investimento InPlanet:**\nRemineralizador: R$ {custo_total_po:,.2f}\nSubsídio Frete: R$ {custo_subsidio_total:,.2f}\n**Total InPlanet: R$ {custo_inplanet_total:,.2f}**")
-    st.warning(f"**🚜 Custo do Agricultor:**\nFrete Cheio: R$ {custo_total_frete:,.2f}\nSubsídio InPlanet: - R$ {custo_subsidio_total:,.2f}\n**Frete Final: R$ {custo_final_fazendeiro_total:,.2f}**")
-    st.success(f"**🎯 Custo para o Produtor (por Hectare):**\nFrete/ha: **R$ {custo_frete_ha:,.2f} / ha**\n*(O remineralizador é 100% custeado pela InPlanet)*")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    pdf_bytes = gerar_pdf(
-        pedreira['Exibicao'], area_ha, dose_t_ha, toneladas_totais, capacidade_caminhao, 
-        viagens_necessarias, distancia_viagem_completa_km, distancia_total_frotas, 
-        total_litros_diesel, frete_por_tonelada, custo_total_po, custo_subsidio_total, 
-        custo_total_frete, custo_final_fazendeiro_total, custo_frete_ha, tipo_frete
-    )
-    st.download_button(
-        label="📄 Baixar Proposta em PDF",
-        data=pdf_bytes,
-        file_name="Proposta_InPlanet.pdf",
-        mime="application/pdf",
-        use_container_width=True
-    )
-
-with col_grafico:
-    df_grafico = pd.DataFrame({
-        'Categoria': ['Remineralizador (Invest. InPlanet)', 'Subsídio Frete (Invest. InPlanet)', 'Frete (Custo Produtor)'],
-        'Valor (R$)': [custo_total_po, custo_subsidio_total, custo_final_fazendeiro_total]
-    })
-    cores = ['#2EA84A', '#82E0AA', '#E67E22']
-    fig = px.pie(df_grafico, values='Valor (R$)', names='Categoria', hole=0.4, 
-                 title="Distribuição Financeira Total",
-                 color_discrete_sequence=cores)
-    fig.update_traces(textposition='inside', textinfo='percent+label', showlegend=False)
-    fig.update_layout(margin=dict(t=40, b=0, l=0, r=0))
-    st.plotly_chart(fig, use_container_width=True)
-
-# ------------------------------------------
-# MEMÓRIA DE CÁLCULO (PASSO A PASSO)
-# ------------------------------------------
-with st.expander("🧮 Ver Memória de Cálculo (Passo a Passo para o Produtor)"):
-    st.markdown("Mostre esta seção ao produtor rural para total transparência na formação de preços.")
-    
-    st.write(f"**1. Necessidade de Produto:**")
-    st.write(f"{area_ha} hectares × {dose_t_ha} toneladas/ha = **{toneladas_totais:,.0f} toneladas** de Remineralizador.")
-    
-    st.write(f"**2. Logística e Transporte:**")
-    st.write(f"Capacidade do Caminhão: **{capacidade_caminhao} toneladas** por viagem.")
-    st.write(f"{toneladas_totais:,.0f} tons ÷ {capacidade_caminhao} tons = **{viagens_necessarias} viagens** completas.")
-    st.write(f"Distância do Trajeto (Ida + Volta): **{distancia_viagem_completa_km:,.0f} km**.")
-    st.write(f"Quilometragem Total da Frota: {viagens_necessarias} viagens × {distancia_viagem_completa_km:,.0f} km = **{distancia_total_frotas:,.0f} km rodados**.")
-    
-    st.write(f"**3. Formação do Preço do Frete:**")
-    if tipo_frete == "Frete Terceirizado (ANTT)":
-        st.write(f"Cálculo ANTT: {toneladas_totais:,.0f} tons × {distancia_viagem_completa_km:,.0f} km × R$ {tarifa_ton_km:.2f} (Tarifa por ton/km) = **R$ {custo_total_frete:,.2f}**.")
-    else:
-        st.write(f"A) Combustível: {total_litros_diesel:,.0f} Litros × R$ {preco_diesel:.2f} = **R$ {custo_combustivel:,.2f}**")
-        st.write(f"B) Pneus e Manutenção: {distancia_total_frotas:,.0f} km × R$ {custo_manutencao_km:.2f}/km = **R$ {custo_manut_total:,.2f}**")
-        st.write(f"C) Motorista e Pedágio: {viagens_necessarias} viagens × (R$ {custo_motorista_viagem:.2f} + R$ {custo_pedagio_viagem:.2f}) = **R$ {(custo_motor_total + custo_pedagio_total):,.2f}**")
-        st.write(f"Custo Total da Frota (A+B+C) = **R$ {custo_total_frete:,.2f}**")
+    with col_t2:
+        st.markdown("##### 📊 Resumo de Custos Tradicionais")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Viagens", f"{viagens_necessarias}")
+        m2.metric("Km Total Frota", f"{distancia_total_frotas:,.0f} km")
+        m3.metric("Frete por Tonelada", f"R$ {frete_por_tonelada:,.2f}")
         
-    st.write(f"Custo Original do Frete por Tonelada: **R$ {frete_por_tonelada:,.2f} / ton**.")
+        st.warning(f"**Custo Final do Produtor Rural:** R$ {custo_final_fazendeiro_total:,.2f} *(R$ {custo_frete_ha:,.2f} / ha)*")
+        
+        pdf_bytes = gerar_pdf(pedreira['Exibicao'], area_ha, dose_t_ha, toneladas_totais, capacidade_caminhao, viagens_necessarias, distancia_viagem_completa_km, distancia_total_frotas, total_litros_diesel, frete_por_tonelada, custo_total_po, custo_subsidio_total, custo_total_frete, custo_final_fazendeiro_total, custo_frete_ha, tipo_frete)
+        st.download_button(label="📄 Baixar Proposta Tradicional em PDF", data=pdf_bytes, file_name="Proposta_InPlanet.pdf", mime="application/pdf", use_container_width=True)
+
+# ------------------------------------------
+# ABA 2: MÓDULO AVANÇADO ESG (BIOMETANO)
+# ------------------------------------------
+with aba_esg:
+    st.subheader("🤖 Modelo de Negócio do Operador de Biometano (Carreta 40t)")
+    st.markdown("Este módulo calcula dinamicamente a estrutura de custos do operador e gera o ganho real de médio prazo em créditos de carbono.")
     
-    st.write(f"**4. Abatimento InPlanet:**")
-    st.write(f"A InPlanet custeará R$ {subsidio_frete:.2f} por tonelada transportada.")
-    st.write(f"{toneladas_totais:,.0f} tons × R$ {subsidio_frete:.2f} = **R$ {custo_subsidio_total:,.2f} de desconto no frete**.")
+    # Função matemática para simular os 3 cenários da planilha do operador
+    def calcular_cenario_operador(viagens_dia, tons, dist_iv):
+        cap_caminhao = 40.0
+        vgs = math.ceil(tons / cap_caminhao)
+        mat_dia = viagens_dia * cap_caminhao
+        km_dia = viagens_dia * dist_iv
+        dias_uts = math.ceil(vgs / viagens_dia)
+        meses = dias_uts / 22.0
+        
+        custo_fixo_acum = meses * 61750.00
+        franquia_total = meses * 4000.0
+        km_total_proj = vgs * dist_iv
+        km_excedente = max(0, km_total_proj - franquia_total)
+        custo_km_adic = km_excedente * 4.44
+        
+        custo_he_dia = 240.0 if viagens_dia == 3 else (480.0 if viagens_dia == 4 else 0.0)
+        custo_he_tot = custo_he_dia * dias_uts
+        
+        custo_tot_proj = custo_fixo_acum + custo_km_adic + custo_he_tot
+        preco_ton = custo_tot_proj / tons if tons > 0 else 0
+        
+        return vgs, km_total_proj, dias_uts, meses, custo_fixo_acum, franquia_total, km_excedente, custo_km_adic, custo_he_tot, custo_tot_proj, preco_ton
+
+    # Gera os dados dos 3 cenários side-by-side igual ao Excel
+    res_2 = calcular_cenario_operador(2, toneladas_totais, distancia_viagem_completa_km)
+    res_3 = calcular_cenario_operador(3, toneladas_totais, distancia_viagem_completa_km)
+    res_4 = calcular_cenario_operador(4, toneladas_totais, distancia_viagem_completa_km)
     
-    st.write(f"**5. Custo Final na Fazenda:**")
-    st.write(f"R$ {custo_total_frete:,.2f} (Frete Cheio) - R$ {custo_subsidio_total:,.2f} (Desconto) = **R$ {custo_final_fazendeiro_total:,.2f}**.")
-    st.write(f"Diluindo pela área: R$ {custo_final_fazendeiro_total:,.2f} ÷ {area_ha} ha = **R$ {custo_frete_ha:,.2f} por hectare**.")
+    df_comparativo = pd.DataFrame({
+        'Métrica Operacional': [
+            'Viagens por Dia', 'Material Entregue por Dia', 'Km Total por Dia', 
+            'Duração em Dias Úteis', 'Duração em Meses (Base 22d)', 'Custo Fixo Total Acumulado',
+            'Franquia Total de KM', 'KM Excedente Total do Projeto', 'Custo de KM Adicional (R$ 4,44)',
+            'Custo de Horas Extras (Total)', 'Custo Total do Projeto', 'Preço por Tonelada'
+        ],
+        'Limite 8 Horas Diárias (2 Vgs)': [
+            2, f"{res_2[1]/res_2[2] if res_2[2]>0 else 0:,.0f} t", f"{res_2[1]/res_2[2] if res_2[2]>0 else 0:,.0f} km", res_2[2], f"{res_2[3]:,.2f} meses", f"R$ {res_2[4]:,.2f}", f"{res_2[5]:,.0f} km", f"{res_2[6]:,.0f} km", f"R$ {res_2[7]:,.2f}", f"R$ {res_2[8]:,.2f}", f"R$ {res_2[9]:,.2f}", f"R$ {res_2[10]:,.2f}"
+        ],
+        '3 Viagens (Eficiente)': [
+            3, f"{res_3[1]/res_3[2] if res_3[2]>0 else 0:,.0f} t", f"{res_3[1]/res_3[2] if res_3[2]>0 else 0:,.0f} km", res_3[2], f"{res_3[3]:,.2f} meses", f"R$ {res_3[4]:,.2f}", f"{res_3[5]:,.0f} km", f"{res_3[6]:,.0f} km", f"R$ {res_3[7]:,.2f}", f"R$ {res_3[8]:,.2f}", f"R$ {res_3[9]:,.2f}", f"R$ {res_3[10]:,.2f}"
+        ],
+        'Alta Produtividade (4 Vgs com HE)': [
+            4, f"{res_4[1]/res_4[2] if res_4[2]>0 else 0:,.0f} t", f"{res_4[1]/res_4[2] if res_4[2]>0 else 0:,.0f} km", res_4[2], f"{res_4[3]:,.2f} meses", f"R$ {res_4[4]:,.2f}", f"{res_4[5]:,.0f} km", f"{res_4[6]:,.0f} km", f"R$ {res_4[7]:,.2f}", f"R$ {res_4[8]:,.2f}", f"R$ {res_4[9]:,.2f}", f"R$ {res_4[10]:,.2f}"
+        ]
+    })
+    
+    st.dataframe(df_comparativo, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    st.markdown("### 📊 Análise de Viabilidade Econômica-Ambiental")
+    
+    # Seletor do cenário escolhido para o gráfico em cascata
+    opcao_cenario = st.selectbox("Escolha a produtividade estimada para a análise de Carbono:", ["Limite 8 Horas Diárias (2 Vgs)", "3 Viagens (Eficiente)", "Alta Produtividade (4 Vgs com HE)"])
+    if opcao_cenario == "Limite 8 Horas Diárias (2 Vgs)": res_escolhido = res_2
+    elif opcao_cenario == "3 Viagens (Eficiente)": res_escolhido = res_3
+    else: res_escolhido = res_4
+    
+    km_total_esg = res_escolhido[1]
+    custo_logistica_esg = res_escolhido[9]
+    
+    # Cálculo exato das toneladas de CO2 emitidas (Fórmulas IPCC/ spreadsheet)
+    emis_diesel = (km_total_esg / CONSUMO_MEDIO['Diesel B15']) * FATORES_EMISSAO['Diesel B15'] / 1000
+    emis_gnv = (km_total_esg / CONSUMO_MEDIO['GNV']) * FATORES_EMISSAO['GNV'] / 1000
+    emis_biometano = (km_total_esg / CONSUMO_MEDIO['Biometano']) * FATORES_EMISSAO['Biometano'] / 1000
+    
+    carbono_evitado_esg = emis_diesel - emis_biometano
+    ganho_financeiro_carbono = carbono_evitado_esg * valor_credito_brl
+    custo_liquido_real_esg = custo_logistica_esg - ganho_financeiro_carbono
+    
+    col_esg1, col_esg2 = st.columns([1, 1.2])
+    
+    with col_esg1:
+        st.markdown("##### 💼 Conta Fechada: Do Imediato ao Médio Prazo")
+        st.info(f"**Custo Logístico Imediato:** R$ {custo_logistica_esg:,.2f}")
+        st.success(f"**🌱 Créditos de Carbono Gerados (Ativo):** R$ {ganho_financeiro_carbono:,.2f}\n\n*(Evitou {carbono_evitado_esg:,.1f} toneladas de CO2eq)*")
+        st.warning(f"**🎯 CUSTO LÍQUIDO REAL (InPlanet ESG):** R$ {custo_liquido_real_esg:,.2f}\n\n*(Preço final real de R$ {(custo_liquido_real_esg/toneladas_totais):,.2f} / ton)*")
+        
+    with col_esg2:
+        # Gráfico Waterfall
+        fig_waterfall = go.Figure(go.Waterfall(
+            orientation = "v", measure = ["absolute", "relative", "total"],
+            x = ["Custo Logística", "Retorno Carbono", "Custo Líquido"],
+            textposition = "outside",
+            text = [f"R$ {custo_logistica_esg/1000:,.0f}k", f"-R$ {ganho_financeiro_carbono/1000:,.0f}k", f"R$ {custo_liquido_real_esg/1000:,.0f}k"],
+            y = [custo_logistica_esg, -ganho_financeiro_carbono, custo_liquido_real_esg],
+            decreasing = {"marker":{"color":"#2EA84A"}},
+            increasing = {"marker":{"color":"#E67E22"}},
+            totals = {"marker":{"color":"#2C3E50"}}
+        ))
+        fig_waterfall.update_layout(title="Demonstrativo de Abatimento ESG", margin=dict(t=40, b=0, l=0, r=0), height=320)
+        st.plotly_chart(fig_waterfall, use_container_width=True)
+
+    # Gráfico de Barras de Emissões
+    df_bar_esg = pd.DataFrame({
+        'Combustível': ['Diesel B15', 'GNV', 'Biometano'],
+        'Pegada de Carbono (tCO2eq)': [emis_diesel, emis_gnv, emis_biometano]
+    })
+    fig_bar = px.bar(df_bar_esg, x='Pegada de Carbono (tCO2eq)', y='Combustível', orientation='h',
+                     color='Combustível', color_discrete_sequence=['#E67E22', '#F1C40F', '#2EA84A'], text_auto='.1f')
+    fig_bar.update_layout(title="Pegada Ecológica Total do Projeto (Ciclo de Vida - Poço ao Roda)", height=250, margin=dict(t=40, b=0))
+    st.plotly_chart(fig_bar, use_container_width=True)
 
 # ==========================================
-# 5. MAPA INTERATIVO
+# 5. MAPA INTERATIVO (VISUALIZAÇÃO GLOBAL)
 # ==========================================
 st.markdown("---")
-st.subheader("🗺️ Visualização no Mapa")
+st.subheader("🗺️ Visualização Geográfica do Fluxo")
 
-if tipo_destino == "Colar Link do Google Maps / Coordenadas" and input_local:
+if input_local and lat_extraida and lon_extraida:
     centro_lat = (pedreira['Lat'] + fazenda_lat) / 2
     centro_lon = (pedreira['Long'] + fazenda_lon) / 2
     m = folium.Map(location=[centro_lat, centro_lon], zoom_start=6)
-    
-    folium.Marker(coord_origem, popup=f"Origem: {pedreira['Mine Name']}", icon=folium.Icon(color='gray', icon='industry', prefix='fa')).add_to(m)
-    folium.Marker(coord_destino, popup="Destino", icon=folium.Icon(color='green', icon='leaf', prefix='fa')).add_to(m)
-    folium.PolyLine([coord_origem, coord_destino], color="blue", weight=2.5, opacity=0.8, dash_array='5, 5').add_to(m)
+    folium.Marker((pedreira['Lat'], pedreira['Long']), popup=f"Pedreira: {pedreira['Mine Name']}", icon=folium.Icon(color='gray', icon='industry', prefix='fa')).add_to(m)
+    folium.Marker((fazenda_lat, fazenda_lon), popup="Fazenda Destino", icon=folium.Icon(color='green', icon='leaf', prefix='fa')).add_to(m)
+    folium.PolyLine([(pedreira['Lat'], pedreira['Long']), (fazenda_lat, fazenda_lon)], color="blue", weight=2.5, dash_array='5, 5').add_to(m)
 else:
-    m = folium.Map(location=[pedreira['Lat'], pedreira['Long']], zoom_start=8)
-    folium.Marker((pedreira['Lat'], pedreira['Long']), popup=f"Origem: {pedreira['Mine Name']}", icon=folium.Icon(color='gray', icon='industry', prefix='fa')).add_to(m)
+    m = folium.Map(location=[-22.41299, -50.57594], zoom_start=7)
+    folium.Marker((-22.41299, -50.57594), popup="Pedreira Siqueira", icon=folium.Icon(color='gray', icon='industry', prefix='fa')).add_to(m)
 
-st_folium(m, width=1200, height=500)
+st_folium(m, width=1200, height=400)
