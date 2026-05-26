@@ -22,6 +22,14 @@ CONSUMO_MEDIO = {
     'Biometano': 1.90
 }
 
+# Mapa de Cores Estratégicas para os Gráficos
+CORES_MODALIDADES = {
+    'Operação Biometano (InPlanet)': '#2EA84A',  # Verde InPlanet
+    'Frete Retorno (Diesel)': '#E67E22',         # Laranja Oportunidade
+    'Preço ANTT (Terceirizado)': '#34495E',      # Chumbo Escuro
+    'Frete Próprio (Fazenda)': '#95A5A6'         # Cinza Claro
+}
+
 # ==========================================
 # BASE DE DADOS
 # ==========================================
@@ -67,10 +75,107 @@ dados_antt = pd.DataFrame({
 })
 
 # ==========================================
+# FUNÇÃO DE EXPORTAÇÃO DO NOVO PDF EXECUTIVO
+# ==========================================
+def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumos, fig_custos, fig_sustentabilidade, valor_credito_brl):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Cabeçalho e Logo
+    if os.path.exists("logo.png"):
+        pdf.image("logo.png", x=80, y=10, w=50)
+        pdf.ln(25)
+    else:
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, txt="Relatorio Analitico: Logistica & ESG", ln=True, align='C')
+        pdf.ln(5)
+        
+    # Seção 1: Resumo da Operação
+    pdf.set_font("Arial", 'B', 12)
+    pdf.set_text_color(44, 62, 80)
+    pdf.cell(200, 8, txt="1. Parametros da Operacao", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(200, 6, txt=f"Origem do Produto: {pedreira}", ln=True)
+    pdf.cell(200, 6, txt=f"Volume Movimentado: {toneladas:,.0f} toneladas ({dose} t/ha em {area:,.0f} ha)", ln=True)
+    pdf.cell(200, 6, txt=f"Distancia do Trajeto (Ida): {dist_ida:,.1f} km", ln=True)
+    pdf.ln(5)
+    
+    # Imagens dos Gráficos (Salvando no tempfile e anexando)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.set_text_color(44, 62, 80)
+    pdf.cell(200, 8, txt="2. Analise Grafica: Custos x Impacto Ambiental", ln=True)
+    pdf.ln(2)
+    
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_c:
+            fig_custos.write_image(tmp_c.name, engine="kaleido", width=500, height=350)
+            pdf.image(tmp_c.name, x=10, w=90)
+            
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_s:
+            fig_sustentabilidade.write_image(tmp_s.name, engine="kaleido", width=500, height=350)
+            # Posicionando o segundo gráfico ao lado do primeiro
+            pdf.image(tmp_s.name, x=105, y=pdf.get_y() - 63, w=90)
+    except:
+        pdf.set_font("Arial", 'I', 9)
+        pdf.cell(200, 10, txt="(Nao foi possivel carregar as imagens dos graficos neste dispositivo)", ln=True)
+    
+    pdf.ln(70) # Pula o espaço dos gráficos
+    
+    # Seção 3: Análise Descritiva Dinâmica
+    pdf.set_font("Arial", 'B', 12)
+    pdf.set_text_color(44, 62, 80)
+    pdf.cell(200, 8, txt="3. Parecer Estrategico dos Resultados", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.set_text_color(0, 0, 0)
+    
+    # Descobrindo os vencedores
+    modalidade_mais_barata = min(tabela_resumos, key=lambda k: tabela_resumos[k]['R$/t'])
+    modalidade_mais_limpa = min(tabela_resumos, key=lambda k: tabela_resumos[k]['Emissoes'])
+    
+    texto_analise = f"De acordo com a simulacao financeira, a modalidade com menor custo de desembolso imediato "
+    texto_analise += f"e a '{modalidade_mais_barata}', com o valor de R$ {tabela_resumos[modalidade_mais_barata]['R$/t']:,.2f} por tonelada transportada. "
+    
+    texto_analise += f"Por outro lado, ao observar a pegada de carbono (Escopo 3), a operacao ambientalmente mais eficiente "
+    texto_analise += f"e a '{modalidade_mais_limpa}', emitindo apenas {tabela_resumos[modalidade_mais_limpa]['Emissoes']:,.1f} toneladas de CO2 equivalente em todo o projeto."
+    
+    pdf.multi_cell(190, 6, txt=texto_analise)
+    
+    # Adendo de Biometano (se existir)
+    if "Operação Biometano (InPlanet)" in tabela_resumos:
+        pdf.ln(3)
+        emis_bio = tabela_resumos["Operação Biometano (InPlanet)"]['Emissoes']
+        
+        # Encontra o diesel baseline para comparar
+        chave_diesel = "Frete Retorno (Diesel)" if "Frete Retorno (Diesel)" in tabela_resumos else list(tabela_resumos.keys())[0]
+        emis_diesel = tabela_resumos[chave_diesel]['Emissoes'] if chave_diesel != "Operação Biometano (InPlanet)" else (toneladas_totais/40 * dist_ida*2 / 2.02 * 2.70831 / 1000)
+        
+        carbono_evitado = max(0, emis_diesel - emis_bio)
+        retorno_reais = carbono_evitado * valor_credito_brl
+        abatimento_ton = retorno_reais / toneladas_totais if toneladas_totais > 0 else 0
+        
+        texto_bio = f"Destaque ESG: A escolha pela Operacao Biometano reduz a pegada do transporte em relacao ao combustivel fossil padrao, "
+        texto_bio += f"evitando a emissao de {carbono_evitado:,.1f} tCO2eq. Essa descarbonizacao gera um ativo financeiro em creditos de carbono "
+        texto_bio += f"estimado em R$ {retorno_reais:,.2f}. Na pratica, isso representa um abatimento de R$ {abatimento_ton:,.2f} no custo real de cada tonelada de remineralizador entregue."
+        
+        pdf.set_text_color(39, 174, 96) # Verde
+        pdf.multi_cell(190, 6, txt=texto_bio)
+        pdf.set_text_color(0, 0, 0)
+        
+    pdf.ln(10)
+    pdf.set_font("Arial", 'I', 8)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(200, 5, txt="Documento confidencial gerado automaticamente pelo Simulador InPlanet ESG.", ln=True, align='C')
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        with open(tmp.name, "rb") as f:
+            pdf_bytes = f.read()
+    return pdf_bytes
+
+# ==========================================
 # INTERFACE LATERAL (SIDEBAR)
 # ==========================================
-st.title("📊 Painel Analítico: Decisão Logística & ESG")
-
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
 
@@ -110,7 +215,7 @@ with col_input3:
 st.markdown("---")
 
 # ==========================================
-# PARÂMETROS ESPECÍFICOS OCULTOS NO EXPANDER
+# PARÂMETROS ESPECÍFICOS OCULTOS
 # ==========================================
 with st.expander("🛠️ Ajustar Parâmetros Internos dos Custos de Frete", expanded=False):
     col_c1, col_c2, col_c3, col_c4 = st.columns(4)
@@ -139,7 +244,7 @@ with st.expander("🛠️ Ajustar Parâmetros Internos dos Custos de Frete", exp
             trips_dia_biometano = st.number_input("Viagens por Dia:", value=3, min_value=1)
 
 # ==========================================
-# LÓGICA DE CÁLCULO DAS MODALIDADES
+# LÓGICA DE CÁLCULO
 # ==========================================
 resumo_modalidades = {}
 
@@ -162,7 +267,7 @@ if "Frete Próprio (Fazenda)" in opcoes_ativas:
 if "Frete Retorno (Diesel)" in opcoes_ativas:
     custo_retorno_tot = toneladas_totais * valor_ton_retorno
     vgs_retorno = math.ceil(toneladas_totais / cap_retorno)
-    km_retorno = vgs_retorno * distancia_ida_km # Só conta Ida
+    km_retorno = vgs_retorno * distancia_ida_km
     emis_retorno = (km_retorno / cons_retorno) * FATORES_EMISSAO['Diesel B15'] / 1000
     resumo_modalidades["Frete Retorno (Diesel)"] = {"Custo Total": custo_retorno_tot, "R$/t": valor_ton_retorno, "Viagens": vgs_retorno, "Km Total": km_retorno, "Emissoes": emis_retorno}
 
@@ -180,22 +285,17 @@ if "Operação Biometano (InPlanet)" in opcoes_ativas:
     emis_bio = (km_bio / CONSUMO_MEDIO['Biometano']) * FATORES_EMISSAO['Biometano'] / 1000
     resumo_modalidades["Operação Biometano (InPlanet)"] = {"Custo Total": custo_bio_bruto, "R$/t": custo_bio_bruto / toneladas_totais, "Viagens": vgs_bio, "Km Total": km_bio, "Emissoes": emis_bio}
 
-
 # ==========================================
-# 1. CARDS DINÂMICOS (DECISÃO IMEDIATA)
+# EXIBIÇÃO: CARDS E GRÁFICOS
 # ==========================================
 if resumo_modalidades:
     st.subheader("💳 Custo Logístico Imediato (R$ por Tonelada)")
     
-    # Encontra o menor valor por tonelada para dar o destaque
     menor_custo_ton = min([d['R$/t'] for d in resumo_modalidades.values()])
-    
     cols_cards = st.columns(len(resumo_modalidades))
     
     for col, (modalidade, dados) in zip(cols_cards, resumo_modalidades.items()):
         com_trofeu = dados['R$/t'] == menor_custo_ton
-        
-        # Define as cores do Card (Verde se for o melhor, Cinza se não for)
         bg_color = "#E8F5E9" if com_trofeu else "#F8F9FA"
         border_color = "#2EA84A" if com_trofeu else "#DEE2E6"
         text_color = "#1E8449" if com_trofeu else "#2C3E50"
@@ -210,14 +310,10 @@ if resumo_modalidades:
         """
         col.markdown(card_html, unsafe_allow_html=True)
 
-    # ==========================================
-    # 2. INTELIGÊNCIA ESG (BIOMETANO VS DIESEL)
-    # ==========================================
     if "Operação Biometano (InPlanet)" in opcoes_ativas:
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("🌱 Inteligência de Carbono: Rentabilidade do Biometano")
         
-        # Calcula um "Diesel Baseline" para comparação de mesma rota (Assumindo 40t e consumo médio de 2.02)
         vgs_baseline = math.ceil(toneladas_totais / 40.0)
         km_baseline = vgs_baseline * dist_completa_ida_volta
         emis_baseline_diesel = (km_baseline / CONSUMO_MEDIO['Diesel B15']) * FATORES_EMISSAO['Diesel B15'] / 1000
@@ -228,49 +324,52 @@ if resumo_modalidades:
         valor_total_gerado = carbono_evitado * valor_credito_brl
         valor_por_tonelada_gerado = valor_total_gerado / toneladas_totais if toneladas_totais > 0 else 0
         
-        st.info(f"""
-        **A Mágica da Descarbonização na Prática:** Ao escolher a operação InPlanet a Biometano em vez de uma carreta Diesel padrão, essa operação de {toneladas_totais:,.0f} toneladas evita a emissão de **{carbono_evitado:,.1f} tCO2eq**. 
-        """)
+        st.info(f"**A Mágica da Descarbonização na Prática:** Ao escolher a operação a Biometano, essa operação evita a emissão de **{carbono_evitado:,.1f} tCO2eq**.")
         
         col_b1, col_b2, col_b3 = st.columns(3)
         col_b1.metric("💰 Ativo Financeiro Gerado (Total)", f"R$ {valor_total_gerado:,.2f}", f"Créditos Convertidos")
         col_b2.metric("♻️ Retorno por Tonelada", f"R$ {valor_por_tonelada_gerado:,.2f}", f"Abatimento por Ton")
         
-        # Custo Líquido Real do Biometano
         custo_bruto_bio = resumo_modalidades["Operação Biometano (InPlanet)"]["Custo Total"]
         custo_liquido_bio = custo_bruto_bio - valor_total_gerado
         preco_liquido_ton_bio = custo_liquido_bio / toneladas_totais
         col_b3.metric("🎯 Preço LÍQUIDO Biometano", f"R$ {preco_liquido_ton_bio:,.2f} / t", f"Após compensação ESG", delta_color="inverse")
 
-    # ==========================================
-    # 3. GRÁFICOS ANALÍTICOS GERAIS
-    # ==========================================
     st.markdown("---")
     st.subheader("📈 Visão Consolidada: Custos x Pegada Ambiental")
     
     col_g1, col_g2 = st.columns(2)
-    
     df_graficos = pd.DataFrame([
-        {
-            "Modalidade": k, 
-            "Custo Total (R$)": v['Custo Total'], 
-            "Pegada Ecológica (tCO2eq)": v['Emissoes'],
-        } for k, v in resumo_modalidades.items()
+        {"Modalidade": k, "Custo Total (R$)": v['Custo Total'], "Pegada Ecológica (tCO2eq)": v['Emissoes']} 
+        for k, v in resumo_modalidades.items()
     ])
     
+    # Gerando Gráficos Beautificados
     with col_g1:
         fig_custos = px.bar(df_graficos, x='Modalidade', y='Custo Total (R$)', 
                             title="Desembolso Operacional Total (R$)",
-                            color='Modalidade', text_auto='.2s')
-        fig_custos.update_layout(showlegend=False)
+                            color='Modalidade', color_discrete_map=CORES_MODALIDADES, text_auto='.2s')
+        fig_custos.update_layout(template="plotly_white", showlegend=False, xaxis_title="", yaxis_title="Custo Total (R$)", font=dict(family="Arial", size=14))
+        fig_custos.update_traces(textposition='outside')
         st.plotly_chart(fig_custos, use_container_width=True)
         
     with col_g2:
         fig_sustentabilidade = px.bar(df_graficos, x='Modalidade', y='Pegada Ecológica (tCO2eq)', 
                                       title="Impacto Ambiental (Ton. de Carbono)",
-                                      color='Modalidade', text_auto='.1f')
-        fig_sustentabilidade.update_layout(showlegend=False)
+                                      color='Modalidade', color_discrete_map=CORES_MODALIDADES, text_auto='.1f')
+        fig_sustentabilidade.update_layout(template="plotly_white", showlegend=False, xaxis_title="", yaxis_title="Pegada (tCO2eq)", font=dict(family="Arial", size=14))
+        fig_sustentabilidade.update_traces(textposition='outside')
         st.plotly_chart(fig_sustentabilidade, use_container_width=True)
 
+    # Botão de PDF
+    st.markdown("---")
+    pdf_bytes_comp = gerar_pdf_analitico(pedreira_selecionada, area_ha, dose_t_ha, toneladas_totais, distancia_ida_km, resumo_modalidades, fig_custos, fig_sustentabilidade, valor_credito_brl)
+    st.download_button(
+        label="📄 Baixar Relatório Executivo (PDF) com Parecer",
+        data=pdf_bytes_comp,
+        file_name="Relatorio_Logistica_ESG_InPlanet.pdf",
+        mime="application/pdf",
+        use_container_width=True
+    )
 else:
-    st.warning("⚠️ Por favor, selecione pelo menos uma modalidade de frete na barra lateral esquerda.")
+    st.warning("⚠️ Selecione pelo menos uma modalidade de frete na barra lateral.")
