@@ -43,9 +43,9 @@ dados_antt = pd.DataFrame({
 })
 
 # ==========================================
-# FUNÇÃO DE PDF ATUALIZADA
+# FUNÇÃO DE PDF COMPLETADA COM MODELO COMERCIAL
 # ==========================================
-def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumos, fig_custos, fig_sustentabilidade, valor_credito_brl):
+def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumos, fig_custos, fig_sustentabilidade, valor_credito_brl, modelo_neg, rec_extra, bonus_ha, dif_custo):
     pdf = FPDF()
     pdf.add_page()
     if os.path.exists("logo.png"):
@@ -53,22 +53,22 @@ def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumo
         pdf.ln(25)
     else:
         pdf.set_font("Arial", 'B', 16)
-        pdf.cell(200, 10, txt="Relatorio Analitico: Logistica & ESG", ln=True, align='C')
+        pdf.cell(200, 10, txt="Proposta Comercial Estrategica - InPlanet", ln=True, align='C')
         pdf.ln(5)
         
     pdf.set_font("Arial", 'B', 12)
     pdf.set_text_color(44, 62, 80)
-    pdf.cell(200, 8, txt="1. Parametros da Operacao", ln=True)
+    pdf.cell(200, 8, txt="1. Parametros Gerais do Escopo", ln=True)
     pdf.set_font("Arial", '', 10)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(200, 6, txt=f"Origem do Produto: {pedreira}", ln=True)
     pdf.cell(200, 6, txt=f"Volume Movimentado: {toneladas:,.0f} toneladas ({dose} t/ha em {area:,.0f} ha)", ln=True)
-    pdf.cell(200, 6, txt=f"Distancia do Trajeto (Ida): {dist_ida:,.1f} km", ln=True)
+    pdf.cell(200, 6, txt=f"Distancia Unidirecional de Ida: {dist_ida:,.1f} km", ln=True)
     pdf.ln(5)
     
     pdf.set_font("Arial", 'B', 12)
     pdf.set_text_color(44, 62, 80)
-    pdf.cell(200, 8, txt="2. Analise Grafica: Custos x Impacto Ambiental", ln=True)
+    pdf.cell(200, 8, txt="2. Quadro de Cenarios Cogitados (Custos x Emissoes)", ln=True)
     pdf.ln(2)
     
     try:
@@ -79,43 +79,32 @@ def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumo
             fig_sustentabilidade.write_image(tmp_s.name, engine="kaleido", width=500, height=350)
             pdf.image(tmp_s.name, x=105, y=pdf.get_y() - 63, w=90)
     except:
-        pdf.set_font("Arial", 'I', 9)
-        pdf.cell(200, 10, txt="(Nao foi possivel carregar as imagens neste dispositivo)", ln=True)
+        pass
     
     pdf.ln(70)
     
+    # Seção 3: Alinhamento Comercial Selecionado
     pdf.set_font("Arial", 'B', 12)
     pdf.set_text_color(44, 62, 80)
-    pdf.cell(200, 8, txt="3. Parecer Estrategico dos Resultados e Ativos ESG", ln=True)
+    pdf.cell(200, 8, txt="3. Modelo Logistico-Comercial Acordado", ln=True)
     pdf.set_font("Arial", '', 10)
     pdf.set_text_color(0, 0, 0)
     
-    modalidade_mais_barata = min(tabela_resumos, key=lambda k: tabela_resumos[k]['Liquido R$/t'])
-    modalidade_mais_limpa = min(tabela_resumos, key=lambda k: tabela_resumos[k]['Emissoes'])
+    pdf.cell(200, 6, txt=f"Modelo Selecionado para Execucao: {modelo_neg}", ln=True)
+    pdf.cell(200, 6, txt=f"Custo de Desembolso Bruto do Frete: R$ {tabela_resumos[modelo_neg]['Custo Total']:,.2f} (R$ {tabela_resumos[modelo_neg]['R$/t']:,.2f}/t)", ln=True)
     
-    texto_analise = f"Analisando o Custo Liquido (Custo Bruto abatido pela geracao de ativos ambientais), a modalidade mais "
-    texto_analise += f"competitiva e a '{modalidade_mais_barata}', com o valor final de R$ {tabela_resumos[modalidade_mais_barata]['Liquido R$/t']:,.2f} por tonelada. "
-    texto_analise += f"Ambientalmente, a operacao '{modalidade_mais_limpa}' lidera a descarbonizacao, emitindo apenas {tabela_resumos[modalidade_mais_limpa]['Emissoes']:,.1f} tCO2eq."
-    pdf.multi_cell(190, 6, txt=texto_analise)
-    pdf.ln(5)
-
-    pdf.set_font("Arial", 'B', 9)
-    pdf.cell(50, 7, "Modalidade", 1, 0, 'C')
-    pdf.cell(35, 7, "Custo Bruto (R$/t)", 1, 0, 'C')
-    pdf.cell(35, 7, "Ativo Gerado (R$/t)", 1, 0, 'C')
-    pdf.cell(35, 7, "Custo Liquido (R$/t)", 1, 1, 'C')
-    
-    pdf.set_font("Arial", '', 9)
-    for k, v in tabela_resumos.items():
-        pdf.cell(50, 7, str(k), 1, 0, 'L')
-        pdf.cell(35, 7, f"R$ {v['R$/t']:,.2f}", 1, 0, 'R')
-        pdf.cell(35, 7, f"R$ {v['Retorno R$/t']:,.2f}", 1, 0, 'R')
-        pdf.cell(35, 7, f"R$ {v['Liquido R$/t']:,.2f}", 1, 1, 'R')
+    if rec_extra > 0:
+        pdf.set_text_color(39, 174, 96)
+        pdf.cell(200, 6, txt=f"Faturamento Adicional em Carbono para InPlanet: + R$ {rec_extra:,.2f}", ln=True)
+        pdf.cell(200, 6, txt=f"Ativo de Carbono Disponivel para Negociacao/Subsidio: R$ {bonus_ha:,.2f} / ha", ln=True)
+        pdf.set_text_color(0, 0, 0)
+    else:
+        pdf.cell(200, 6, txt="Modelo Baseline: Nao gera faturamento incremental de ativos de carbono.", ln=True)
         
-    pdf.ln(10)
+    pdf.ln(5)
     pdf.set_font("Arial", 'I', 8)
     pdf.set_text_color(150, 150, 150)
-    pdf.cell(200, 5, txt="Documento gerado automaticamente pelo Simulador InPlanet ESG. Baseline: Diesel Ida+Volta.", ln=True, align='C')
+    pdf.cell(200, 5, txt="Documento confidencial gerado pelo Simulador InPlanet ESG. Baseline: Diesel Terceirizado.", ln=True, align='C')
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
@@ -126,9 +115,6 @@ def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumo
 # ==========================================
 # INTERFACE LATERAL (SIDEBAR)
 # ==========================================
-if os.path.exists("logo.png"):
-    st.sidebar.image("logo.png", use_container_width=True)
-
 st.sidebar.header("⚙️ Variáveis de Mercado")
 preco_credito_usd = st.sidebar.number_input("Preço Estratégico do Crédito ($/tCDR)", value=300.0)
 cotacao_dolar = st.sidebar.number_input("Cotação Cambial (R$/USD)", value=5.00, step=0.10)
@@ -198,15 +184,15 @@ with st.expander("🛠️ Ajustar Parâmetros Internos dos Custos de Frete", exp
             he_4vgs = st.number_input("Hora Extra p/ 4+ Vgs (R$/dia):", value=480.0, step=10.0)
 
 # ==========================================
-# LÓGICA DE BASELINE GLOBAL (DIESEL)
+# LÓGICA DO BASELINE GLOBAL (DIESEL 100% DEDICADO)
 # ==========================================
 vgs_baseline = math.ceil(toneladas_totais / 40.0)
 km_baseline = vgs_baseline * dist_completa_ida_volta
 emis_baseline_diesel = (km_baseline / CONSUMO_MEDIO['Diesel B15']) * FATORES_EMISSAO['Diesel B15'] / 1000
-custo_baseline_diesel = toneladas_totais * dist_completa_ida_volta * 0.26 # Fallback
+custo_baseline_diesel = toneladas_totais * dist_completa_ida_volta * 0.26
 
 # ==========================================
-# LÓGICA DE CÁLCULO DAS MODALIDADES
+# CÁLCULOS MATEMÁTICOS DAS OPÇÕES
 # ==========================================
 resumo_modalidades = {}
 
@@ -218,8 +204,6 @@ if "Preço ANTT (Terceirizado)" in opcoes_ativas:
     custo_antt = toneladas_totais * dist_completa_ida_volta * tarifa_antt
     emis_antt = (km_antt / antt_dados['Consumo_km_l']) * FATORES_EMISSAO['Diesel B15'] / 1000
     resumo_modalidades["Preço ANTT (Terceirizado)"] = {"Custo Total": custo_antt, "R$/t": custo_antt / toneladas_totais, "Viagens": vgs_antt, "Emissoes": emis_antt}
-    
-    # Se ANTT estiver ativo, ele vira o Baseline Financeiro e de Emissão
     custo_baseline_diesel = custo_antt 
     emis_baseline_diesel = emis_antt
 
@@ -251,20 +235,16 @@ if "Operação Biometano (InPlanet)" in opcoes_ativas:
     emis_bio = (km_bio_calc / CONSUMO_MEDIO['Biometano']) * FATORES_EMISSAO['Biometano'] / 1000
     resumo_modalidades["Operação Biometano (InPlanet)"] = {"Custo Total": custo_bio_bruto, "R$/t": custo_bio_bruto / toneladas_totais, "Viagens": vgs_bio_calc, "Emissoes": emis_bio}
 
-# APLICAR CÁLCULO DE CRÉDITOS E CUSTO LÍQUIDO GERAL
+# Preenche métricas auxiliares de prateleira (cards tradicionais)
 for mod, dados in resumo_modalidades.items():
     evitado = max(0, emis_baseline_diesel - dados['Emissoes'])
     retorno_reais = evitado * valor_credito_brl
     retorno_ton = retorno_reais / toneladas_totais if toneladas_totais > 0 else 0
-    liquido_ton = dados['R$/t'] - retorno_ton
-    
-    dados['Carbono Evitado'] = evitado
-    dados['Retorno R$'] = retorno_reais
+    dados['Liquido R$/t'] = dados['R$/t'] - retorno_ton
     dados['Retorno R$/t'] = retorno_ton
-    dados['Liquido R$/t'] = liquido_ton
 
 # ==========================================
-# EXIBIÇÃO: CARDS E GRÁFICOS (RESTABELECIDOS)
+# EXIBIÇÃO: VEICULAÇÃO DOS CARDS REESTABELECIDOS
 # ==========================================
 if resumo_modalidades:
     st.subheader("💳 Custo Logístico (Bruto vs Líquido com ESG)")
@@ -291,76 +271,69 @@ if resumo_modalidades:
         """
         col.markdown(card_html, unsafe_allow_html=True)
 
-    if "Frete Retorno (Diesel)" in opcoes_ativas:
-        st.info("💡 **Inteligência Logística:** A modalidade de *Frete Retorno* apresenta alto abatimento de emissões porque aproveita o trajeto ocioso, eliminando a pegada de carbono da viagem de volta. Na prática, a operação corta o impacto e os custos em 50%.")
-
     # ==========================================
-    # PAINEL DE NEGOCIAÇÃO (INSERIDO ABAIXO DOS CARDS)
+    # NOVO PAINEL DE SELEÇÃO E NEGOCIAÇÃO B2B (REMODELADO)
     # ==========================================
     st.markdown("---")
-    st.subheader("🤝 Painel de Negociação B2B (Margem InPlanet)")
+    st.subheader("🤝 Painel Estratégico de Alinhamento e Modelo de Negociação")
     
-    opcoes_verdes = [m for m in ["Frete Retorno (Diesel)", "Operação Biometano (InPlanet)"] if m in resumo_modalidades]
+    modelo_negociado = st.selectbox(
+        "Selecione o modelo logístico pretendido/viável para esta operação comercial:", 
+        list(resumo_modalidades.keys())
+    )
     
-    if not opcoes_verdes:
-        st.warning("Ative o Frete Retorno ou Biometano para visualizar as margens de negociação ESG.")
+    dados_neg = resumo_modalidades[modelo_negociado]
+    
+    # Cálculos pautados rigorosamente na receita extra de faturamento gerada
+    diferenca_custo_bruto_produtor = dados_neg['Custo Total'] - custo_baseline_diesel
+    emis_evitadas_neg = max(0.0, emis_baseline_diesel - dados_neg['Emissoes'])
+    receita_extra_carbono_inplanet = emis_evitadas_neg * valor_credito_brl
+    
+    # Margem livre pura extra faturamento convertida em R$/ha solicitado
+    ativo_disponivel_negociacao_ha = receita_extra_carbono_inplanet / area_ha if area_ha > 0 else 0
+    
+    col_n1, col_n2, col_n3 = st.columns(3)
+    
+    # Card 1: Delta do produtor
+    if diferenca_custo_bruto_produtor > 0:
+        texto_prod = f"Fica **R$ {diferenca_custo_bruto_produtor:,.2f} mais caro**"
+        cor_prod = "#E74C3C"
+    elif diferenca_custo_bruto_produtor < 0:
+        texto_prod = f"Fica **R$ {abs(diferenca_custo_bruto_produtor):,.2f} mais barato**"
+        cor_prod = "#2EA84A"
     else:
-        abas_negociacao = st.tabs(opcoes_verdes)
+        texto_prod = "Mesmo custo do baseline padrão"
+        cor_prod = "#34495E"
         
-        for i, nome_modalidade in enumerate(opcoes_verdes):
-            with abas_negociacao[i]:
-                dados = resumo_modalidades[nome_modalidade]
-                
-                diferenca_custo_produtor = dados['Custo Total'] - custo_baseline_diesel
-                emissoes_evitadas = dados['Carbono Evitado']
-                receita_extra_inplanet = dados['Retorno R$']
-                
-                subsídio_necessario = max(0, diferenca_custo_produtor) 
-                saldo_para_bonus = receita_extra_inplanet - subsídio_necessario
-                bonus_maximo_ha = saldo_para_bonus / area_ha if saldo_para_bonus > 0 else 0
-                
-                col_n1, col_n2, col_n3 = st.columns(3)
-                
-                if diferenca_custo_produtor > 0:
-                    status_produtor = f"Cliente paga **R$ {diferenca_custo_produtor:,.2f} a mais**"
-                    cor_produtor = "#E74C3C"
-                else:
-                    status_produtor = f"Cliente **economiza R$ {abs(diferenca_custo_produtor):,.2f}**"
-                    cor_produtor = "#2EA84A"
-                    
-                col_n1.markdown(f"""
-                <div style="border-left: 5px solid {cor_produtor}; padding-left: 10px;">
-                    <p style="margin:0; font-size:14px; color:#7F8C8D;">Impacto Bruto no Frete do Cliente</p>
-                    <h4 style="margin:0; color:{cor_produtor};">{status_produtor}</h4>
-                    <p style="margin:0; font-size:12px;">Comparado ao Baseline a Diesel</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                col_n2.markdown(f"""
-                <div style="border-left: 5px solid #F1C40F; padding-left: 10px;">
-                    <p style="margin:0; font-size:14px; color:#7F8C8D;">Receita Extra (Créditos de Carbono)</p>
-                    <h4 style="margin:0; color:#D4AC0D;">+ R$ {receita_extra_inplanet:,.2f}</h4>
-                    <p style="margin:0; font-size:12px;">Gerado com a redução de {emissoes_evitadas:,.1f} tCO2</p>
-                </div>
-                """, unsafe_allow_html=True)
+    col_n1.markdown(f"""
+    <div style="border-left: 5px solid {cor_prod}; padding-left: 10px; background-color: #FBFBFC; padding: 10px; border-radius: 5px;">
+        <p style="margin:0; font-size:13px; color:#7F8C8D;">Desembolso Imediato do Produtor</p>
+        <h4 style="margin-top:5px; margin-bottom:5px; color:{cor_prod};">{texto_prod}</h4>
+        <p style="margin:0; font-size:11px; color:#95A5A6;">Custo bruto sem considerar créditos</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Card 2: Faturamento Extra Bruto
+    col_n2.markdown(f"""
+    <div style="border-left: 5px solid #F1C40F; padding-left: 10px; background-color: #FBFBFC; padding: 10px; border-radius: 5px;">
+        <p style="margin:0; font-size:13px; color:#7F8C8D;">Faturamento Extra Bruto da InPlanet</p>
+        <h4 style="margin-top:5px; margin-bottom:5px; color:#D4AC0D;">+ R$ {receita_extra_carbono_inplanet:,.2f}</h4>
+        <p style="margin:0; font-size:11px; color:#95A5A6;">Receita gerada pelas {emis_evitadas_neg:,.1f} tCO2 salvas</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Card 3: Limite de Bonificação Limpo por Hectare
+    col_n3.markdown(f"""
+    <div style="border-left: 5px solid #2980B9; padding-left: 10px; background-color: #FBFBFC; padding: 10px; border-radius: 5px;">
+        <p style="margin:0; font-size:13px; color:#7F8C8D;">Ativo de Carbono para Negociação</p>
+        <h4 style="margin-top:5px; margin-bottom:5px; color:#2980B9;">R$ {ativo_disponivel_negociacao_ha:,.2f} / ha</h4>
+        <p style="margin:0; font-size:11px; color:#95A5A6;">Orçamento máximo de subsídio ou bonificação</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-                if bonus_maximo_ha > 0:
-                    texto_bonus = f"Até R$ {bonus_maximo_ha:,.2f} / ha"
-                    cor_bonus = "#2980B9"
-                    sub_bonus = "Margem máxima para desconto sem prejuízo"
-                else:
-                    texto_bonus = "Sem Margem Restante"
-                    cor_bonus = "#95A5A6"
-                    sub_bonus = "A receita extra não cobre o frete mais caro"
-
-                col_n3.markdown(f"""
-                <div style="border-left: 5px solid {cor_bonus}; padding-left: 10px;">
-                    <p style="margin:0; font-size:14px; color:#7F8C8D;">Limite de Bonificação ao Produtor</p>
-                    <h4 style="margin:0; color:{cor_bonus};">{texto_bonus}</h4>
-                    <p style="margin:0; font-size:12px;">{sub_bonus}</p>
-                </div>
-                """, unsafe_allow_html=True)
-
+    # ==========================================
+    # VISUAL GRÁFICO (PREMIUM WHITE)
+    # ==========================================
     st.markdown("---")
     st.subheader("📈 Visão Consolidada: Custos x Pegada Ambiental")
     
@@ -371,27 +344,28 @@ if resumo_modalidades:
     ])
     
     with col_g1:
-        fig_custos = px.bar(df_graficos, x='Modalidade', y='Custo Líquido (R$)', 
-                            title="Desembolso Final (Abatido por ESG)",
-                            color='Modalidade', color_discrete_map=CORES_MODALIDADES, text_auto='.2s')
+        fig_custos = px.bar(df_graficos, x='Modalidade', y='Custo Líquido (R$)', title="Desembolso Final (Abatido por ESG)", color='Modalidade', color_discrete_map=CORES_MODALIDADES, text_auto='.2s')
         fig_custos.update_layout(template="plotly_white", showlegend=False, xaxis_title="", yaxis_title="Custo Final (R$)", font=dict(family="Arial", size=14))
         fig_custos.update_traces(textposition='outside')
         st.plotly_chart(fig_custos, use_container_width=True)
         
     with col_g2:
-        fig_sustentabilidade = px.bar(df_graficos, x='Modalidade', y='Pegada Ecológica (tCO2eq)', 
-                                      title="Impacto Ambiental (Ton. de Carbono)",
-                                      color='Modalidade', color_discrete_map=CORES_MODALIDADES, text_auto='.1f')
+        fig_sustentabilidade = px.bar(df_graficos, x='Modalidade', y='Pegada Ecológica (tCO2eq)', title="Impacto Ambiental (Ton. de Carbono)", color='Modalidade', color_discrete_map=CORES_MODALIDADES, text_auto='.1f')
         fig_sustentabilidade.update_layout(template="plotly_white", showlegend=False, xaxis_title="", yaxis_title="Pegada (tCO2eq)", font=dict(family="Arial", size=14))
         fig_sustentabilidade.update_traces(textposition='outside')
         st.plotly_chart(fig_sustentabilidade, use_container_width=True)
 
+    # Botão de PDF
     st.markdown("---")
-    pdf_bytes_comp = gerar_pdf_analitico(pedreira_selecionada, area_ha, dose_t_ha, toneladas_totais, distancia_ida_km, resumo_modalidades, fig_custos, fig_sustentabilidade, valor_credito_brl)
+    pdf_bytes_comp = gerar_pdf_analitico(
+        pedreira_selecionada, area_ha, dose_t_ha, toneladas_totais, distancia_ida_km, 
+        resumo_modalidades, fig_custos, fig_sustentabilidade, valor_credito_brl,
+        modelo_negociado, receita_extra_carbono_inplanet, ativo_disponivel_negociacao_ha, diferenca_custo_bruto_produtor
+    )
     st.download_button(
-        label="📄 Baixar Relatório Executivo (PDF)",
+        label="📄 Baixar Relatório Executivo Personalizado do Modelo Escolhido (PDF)",
         data=pdf_bytes_comp,
-        file_name="Relatorio_Logistica_ESG_InPlanet.pdf",
+        file_name="Proposta_Logistica_ESG_InPlanet.pdf",
         mime="application/pdf",
         use_container_width=True
     )
