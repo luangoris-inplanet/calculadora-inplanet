@@ -43,7 +43,7 @@ dados_antt = pd.DataFrame({
 })
 
 # ==========================================
-# FUNÇÃO DE PDF COMPLETADA COM MODELO COMERCIAL
+# FUNÇÃO DE PDF COM INSIGHTS OPERACIONAIS
 # ==========================================
 def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumos, fig_custos, fig_sustentabilidade, valor_credito_brl, modelo_neg, rec_extra, bonus_ha, dif_custo):
     pdf = FPDF()
@@ -56,6 +56,7 @@ def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumo
         pdf.cell(200, 10, txt="Proposta Comercial Estrategica - InPlanet", ln=True, align='C')
         pdf.ln(5)
         
+    # 1. PARAMETROS GERAIS
     pdf.set_font("Arial", 'B', 12)
     pdf.set_text_color(44, 62, 80)
     pdf.cell(200, 8, txt="1. Parametros Gerais do Escopo", ln=True)
@@ -66,32 +67,61 @@ def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumo
     pdf.cell(200, 6, txt=f"Distancia Unidirecional de Ida: {dist_ida:,.1f} km", ln=True)
     pdf.ln(5)
     
+    # 2. INSIGHTS OPERACIONAIS
     pdf.set_font("Arial", 'B', 12)
     pdf.set_text_color(44, 62, 80)
-    pdf.cell(200, 8, txt="2. Quadro de Cenarios Cogitados (Custos x Emissoes)", ln=True)
-    pdf.ln(2)
-    
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_c:
-            fig_custos.write_image(tmp_c.name, engine="kaleido", width=500, height=350)
-            pdf.image(tmp_c.name, x=10, w=90)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_s:
-            fig_sustentabilidade.write_image(tmp_s.name, engine="kaleido", width=500, height=350)
-            pdf.image(tmp_s.name, x=105, y=pdf.get_y() - 63, w=90)
-    except:
-        pass
-    
-    pdf.ln(70)
-    
-    # Seção 3: Alinhamento Comercial Selecionado
-    pdf.set_font("Arial", 'B', 12)
-    pdf.set_text_color(44, 62, 80)
-    pdf.cell(200, 8, txt="3. Modelo Logistico-Comercial Acordado", ln=True)
+    pdf.cell(200, 8, txt="2. Insights Operacionais (Modelo Selecionado)", ln=True)
     pdf.set_font("Arial", '', 10)
     pdf.set_text_color(0, 0, 0)
     
-    pdf.cell(200, 6, txt=f"Modelo Selecionado para Execucao: {modelo_neg}", ln=True)
-    pdf.cell(200, 6, txt=f"Custo de Desembolso Bruto do Frete: R$ {tabela_resumos[modelo_neg]['Custo Total']:,.2f} (R$ {tabela_resumos[modelo_neg]['R$/t']:,.2f}/t)", ln=True)
+    dados_mod = tabela_resumos[modelo_neg]
+    viagens = dados_mod['Viagens']
+    km_total = dados_mod['Km Total']
+    trips_dia = dados_mod.get('Viagens/Dia', 2)
+    dias_uteis_1_cam = math.ceil(viagens / trips_dia)
+    caminhoes_estimados = math.ceil(dias_uteis_1_cam / 30) # Estimativa para fechar em 1 mes
+    
+    pdf.cell(200, 6, txt=f"Modalidade Logistica: {modelo_neg}", ln=True)
+    pdf.cell(200, 6, txt=f"Total de Viagens (Carretas): {viagens} viagens", ln=True)
+    pdf.cell(200, 6, txt=f"Distancia Total Percorrida (Frota): {km_total:,.0f} km", ln=True)
+    pdf.cell(200, 6, txt=f"Ritmo de Escoamento: {trips_dia} viagens/dia por caminhao", ln=True)
+    pdf.cell(200, 6, txt=f"Tempo Estimado (1 Caminhao): {dias_uteis_1_cam} dias uteis", ln=True)
+    pdf.cell(200, 6, txt=f"Frota Ideal (Para escoar em 1 mes): {caminhoes_estimados} caminhoes simultaneos", ln=True)
+    pdf.ln(5)
+
+    # 3. GRAFICOS
+    pdf.set_font("Arial", 'B', 12)
+    pdf.set_text_color(44, 62, 80)
+    pdf.cell(200, 8, txt="3. Quadro de Cenarios Cogitados (Custos x Emissoes)", ln=True)
+    pdf.ln(2)
+    
+    y_before_images = pdf.get_y()
+    
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_c:
+            fig_custos.write_image(tmp_c.name, engine="kaleido", width=700, height=500)
+            pdf.image(tmp_c.name, x=10, y=y_before_images, w=90)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_s:
+            fig_sustentabilidade.write_image(tmp_s.name, engine="kaleido", width=700, height=500)
+            pdf.image(tmp_s.name, x=105, y=y_before_images, w=90)
+        pdf.set_y(y_before_images + 70) 
+    except Exception as e:
+        pdf.set_font("Arial", 'I', 9)
+        pdf.set_text_color(200, 0, 0)
+        pdf.cell(200, 10, txt="(Aviso: Os graficos nao foram gerados. Instale a biblioteca 'kaleido' no servidor)", ln=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(5)
+    
+    pdf.ln(5)
+    
+    # 4. COMERCIAL
+    pdf.set_font("Arial", 'B', 12)
+    pdf.set_text_color(44, 62, 80)
+    pdf.cell(200, 8, txt="4. Modelo Logistico-Comercial Acordado", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.set_text_color(0, 0, 0)
+    
+    pdf.cell(200, 6, txt=f"Custo de Desembolso Bruto do Frete: R$ {dados_mod['Custo Total']:,.2f} (R$ {dados_mod['R$/t']:,.2f}/t)", ln=True)
     
     if rec_extra > 0:
         pdf.set_text_color(39, 174, 96)
@@ -101,10 +131,10 @@ def gerar_pdf_analitico(pedreira, area, dose, toneladas, dist_ida, tabela_resumo
     else:
         pdf.cell(200, 6, txt="Modelo Baseline: Nao gera faturamento incremental de ativos de carbono.", ln=True)
         
-    pdf.ln(5)
+    pdf.ln(10)
     pdf.set_font("Arial", 'I', 8)
     pdf.set_text_color(150, 150, 150)
-    pdf.cell(200, 5, txt="Documento confidencial gerado pelo Simulador InPlanet ESG. Baseline: Diesel Terceirizado.", ln=True, align='C')
+    pdf.cell(200, 5, txt="Documento confidencial gerado pelo Simulador InPlanet ESG.", ln=True, align='C')
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
@@ -203,7 +233,7 @@ if "Preço ANTT (Terceirizado)" in opcoes_ativas:
     tarifa_antt = antt_dados['Ate_50km'] if distancia_ida_km <= 50 else (antt_dados['Ate_100km'] if distancia_ida_km <= 100 else antt_dados['Acima_100km'])
     custo_antt = toneladas_totais * dist_completa_ida_volta * tarifa_antt
     emis_antt = (km_antt / antt_dados['Consumo_km_l']) * FATORES_EMISSAO['Diesel B15'] / 1000
-    resumo_modalidades["Preço ANTT (Terceirizado)"] = {"Custo Total": custo_antt, "R$/t": custo_antt / toneladas_totais, "Viagens": vgs_antt, "Emissoes": emis_antt}
+    resumo_modalidades["Preço ANTT (Terceirizado)"] = {"Custo Total": custo_antt, "R$/t": custo_antt / toneladas_totais, "Viagens": vgs_antt, "Km Total": km_antt, "Emissoes": emis_antt, "Viagens/Dia": 2}
     custo_baseline_diesel = custo_antt 
     emis_baseline_diesel = emis_antt
 
@@ -212,14 +242,14 @@ if "Frete Próprio (Fazenda)" in opcoes_ativas:
     km_proprio = vgs_proprio * dist_completa_ida_volta
     custo_proprio_tot = (km_proprio / cons_proprio * preco_diesel) + (km_proprio * manut_km_proprio) + (vgs_proprio * fixos_viagem_proprio)
     emis_proprio = (km_proprio / cons_proprio) * FATORES_EMISSAO['Diesel B15'] / 1000
-    resumo_modalidades["Frete Próprio (Fazenda)"] = {"Custo Total": custo_proprio_tot, "R$/t": custo_proprio_tot / toneladas_totais, "Viagens": vgs_proprio, "Emissoes": emis_proprio}
+    resumo_modalidades["Frete Próprio (Fazenda)"] = {"Custo Total": custo_proprio_tot, "R$/t": custo_proprio_tot / toneladas_totais, "Viagens": vgs_proprio, "Km Total": km_proprio, "Emissoes": emis_proprio, "Viagens/Dia": 2}
 
 if "Frete Retorno (Diesel)" in opcoes_ativas:
     custo_retorno_tot = toneladas_totais * valor_ton_retorno
     vgs_retorno = math.ceil(toneladas_totais / cap_retorno)
     km_retorno = vgs_retorno * distancia_ida_km
     emis_retorno = (km_retorno / cons_retorno) * FATORES_EMISSAO['Diesel B15'] / 1000
-    resumo_modalidades["Frete Retorno (Diesel)"] = {"Custo Total": custo_retorno_tot, "R$/t": valor_ton_retorno, "Viagens": vgs_retorno, "Emissoes": emis_retorno}
+    resumo_modalidades["Frete Retorno (Diesel)"] = {"Custo Total": custo_retorno_tot, "R$/t": valor_ton_retorno, "Viagens": vgs_retorno, "Km Total": km_retorno, "Emissoes": emis_retorno, "Viagens/Dia": 2}
 
 if "Operação Biometano (InPlanet)" in opcoes_ativas:
     cap_bio_calc = 40.0
@@ -233,9 +263,8 @@ if "Operação Biometano (InPlanet)" in opcoes_ativas:
     custo_he_bio_tot = (he_3vgs if trips_dia_biometano == 3 else (he_4vgs if trips_dia_biometano >= 4 else 0.0)) * dias_uts_bio
     custo_bio_bruto = custo_fixo_bio_tot + custo_km_bio_tot + custo_he_bio_tot
     emis_bio = (km_bio_calc / CONSUMO_MEDIO['Biometano']) * FATORES_EMISSAO['Biometano'] / 1000
-    resumo_modalidades["Operação Biometano (InPlanet)"] = {"Custo Total": custo_bio_bruto, "R$/t": custo_bio_bruto / toneladas_totais, "Viagens": vgs_bio_calc, "Emissoes": emis_bio}
+    resumo_modalidades["Operação Biometano (InPlanet)"] = {"Custo Total": custo_bio_bruto, "R$/t": custo_bio_bruto / toneladas_totais, "Viagens": vgs_bio_calc, "Km Total": km_bio_calc, "Emissoes": emis_bio, "Viagens/Dia": trips_dia_biometano}
 
-# Preenche métricas auxiliares de prateleira (cards tradicionais)
 for mod, dados in resumo_modalidades.items():
     evitado = max(0, emis_baseline_diesel - dados['Emissoes'])
     retorno_reais = evitado * valor_credito_brl
@@ -244,11 +273,10 @@ for mod, dados in resumo_modalidades.items():
     dados['Retorno R$/t'] = retorno_ton
 
 # ==========================================
-# EXIBIÇÃO: VEICULAÇÃO DOS CARDS REESTABELECIDOS
+# EXIBIÇÃO
 # ==========================================
 if resumo_modalidades:
     st.subheader("💳 Custo Logístico (Bruto vs Líquido com ESG)")
-    st.markdown("Comparativo do preço por tonelada antes e depois da geração dos ativos financeiros ambientais.")
     
     menor_custo_liquido_ton = min([d['Liquido R$/t'] for d in resumo_modalidades.values()])
     cols_cards = st.columns(len(resumo_modalidades))
@@ -271,9 +299,6 @@ if resumo_modalidades:
         """
         col.markdown(card_html, unsafe_allow_html=True)
 
-    # ==========================================
-    # NOVO PAINEL DE SELEÇÃO E NEGOCIAÇÃO B2B (REMODELADO)
-    # ==========================================
     st.markdown("---")
     st.subheader("🤝 Painel Estratégico de Alinhamento e Modelo de Negociação")
     
@@ -283,18 +308,13 @@ if resumo_modalidades:
     )
     
     dados_neg = resumo_modalidades[modelo_negociado]
-    
-    # Cálculos pautados rigorosamente na receita extra de faturamento gerada
     diferenca_custo_bruto_produtor = dados_neg['Custo Total'] - custo_baseline_diesel
     emis_evitadas_neg = max(0.0, emis_baseline_diesel - dados_neg['Emissoes'])
     receita_extra_carbono_inplanet = emis_evitadas_neg * valor_credito_brl
-    
-    # Margem livre pura extra faturamento convertida em R$/ha solicitado
     ativo_disponivel_negociacao_ha = receita_extra_carbono_inplanet / area_ha if area_ha > 0 else 0
     
     col_n1, col_n2, col_n3 = st.columns(3)
     
-    # Card 1: Delta do produtor
     if diferenca_custo_bruto_produtor > 0:
         texto_prod = f"Fica **R$ {diferenca_custo_bruto_produtor:,.2f} mais caro**"
         cor_prod = "#E74C3C"
@@ -313,7 +333,6 @@ if resumo_modalidades:
     </div>
     """, unsafe_allow_html=True)
     
-    # Card 2: Faturamento Extra Bruto
     col_n2.markdown(f"""
     <div style="border-left: 5px solid #F1C40F; padding-left: 10px; background-color: #FBFBFC; padding: 10px; border-radius: 5px;">
         <p style="margin:0; font-size:13px; color:#7F8C8D;">Faturamento Extra Bruto da InPlanet</p>
@@ -322,7 +341,6 @@ if resumo_modalidades:
     </div>
     """, unsafe_allow_html=True)
     
-    # Card 3: Limite de Bonificação Limpo por Hectare
     col_n3.markdown(f"""
     <div style="border-left: 5px solid #2980B9; padding-left: 10px; background-color: #FBFBFC; padding: 10px; border-radius: 5px;">
         <p style="margin:0; font-size:13px; color:#7F8C8D;">Ativo de Carbono para Negociação</p>
@@ -331,9 +349,6 @@ if resumo_modalidades:
     </div>
     """, unsafe_allow_html=True)
 
-    # ==========================================
-    # VISUAL GRÁFICO (PREMIUM WHITE)
-    # ==========================================
     st.markdown("---")
     st.subheader("📈 Visão Consolidada: Custos x Pegada Ambiental")
     
@@ -355,7 +370,6 @@ if resumo_modalidades:
         fig_sustentabilidade.update_traces(textposition='outside')
         st.plotly_chart(fig_sustentabilidade, use_container_width=True)
 
-    # Botão de PDF
     st.markdown("---")
     pdf_bytes_comp = gerar_pdf_analitico(
         pedreira_selecionada, area_ha, dose_t_ha, toneladas_totais, distancia_ida_km, 
